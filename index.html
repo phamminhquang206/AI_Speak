@@ -112,6 +112,12 @@
             background: transparent; color: #666; font-size: 0.8rem; cursor: pointer;
         }
         .reset-btn:hover { border-color: #4f46e5; color: #4f46e5; }
+
+        .input-with-btn {
+            display: flex; gap: 8px; margin-top: 8px;
+        }
+        .input-with-btn input { flex: 1; font-size: 0.88rem; padding: 10px 12px; }
+        .input-with-btn button { padding: 8px 12px; font-size: 0.8rem; }
     </style>
 </head>
 <body>
@@ -133,7 +139,11 @@
                 <select id="model-select" size="8" style="height: auto; min-height: 180px;">
                     <option value="">-- Nhấn "Dò danh sách Model" để tải --</option>
                 </select>
-                <input type="text" id="manual-model" placeholder="Hoặc nhập Model ID thủ công" style="margin-top: 8px; font-size: 0.88rem;">
+                <div class="input-with-btn">
+                    <input type="text" id="manual-model" placeholder="Model ID (tự cập nhật khi chọn ở trên)">
+                    <button id="clear-model-btn" class="small-btn">Xóa</button>
+                </div>
+                <p class="helper-text">💡 Khi chọn model từ danh sách, ô trên sẽ tự cập nhật. Bạn cũng có thể tự gõ Model ID nếu muốn.</p>
             </div>
 
             <div class="form-group">
@@ -200,6 +210,7 @@
         const scanBtn = $("scan-btn");
         const modelSelect = $("model-select");
         const manualModelInput = $("manual-model");
+        const clearModelBtn = $("clear-model-btn");
         const testBtn = $("test-btn");
         const chatSection = $("chat-section");
         const resetBtn = $("reset-btn");
@@ -226,11 +237,27 @@
             if (savedKey) apiKeyInput.value = savedKey;
             if (savedModel) manualModelInput.value = savedModel;
 
+            // Event listeners
             scanBtn.addEventListener("click", scanModels);
             testBtn.addEventListener("click", testConnection);
             resetBtn.addEventListener("click", resetConnection);
             micBtn.addEventListener("click", toggleRecording);
             
+            // QUAN TRỌNG: Đồng bộ dropdown → ô nhập tay khi người dùng chọn model khác
+            modelSelect.addEventListener("change", () => {
+                if (modelSelect.value) {
+                    manualModelInput.value = modelSelect.value;
+                    addLog(`📌 Đã chọn model: ${modelSelect.value}`, "info");
+                }
+            });
+
+            // Nút xóa model đã lưu
+            clearModelBtn.addEventListener("click", () => {
+                manualModelInput.value = "";
+                localStorage.removeItem("gemini_model");
+                addLog("🗑️ Đã xóa model đã lưu.", "info");
+            });
+
             toggleLogBtn.addEventListener("click", () => {
                 logPanel.classList.toggle("collapsed");
                 toggleLogBtn.textContent = logPanel.classList.contains("collapsed") ? "Hiện log" : "Ẩn log";
@@ -271,7 +298,11 @@
         }
 
         function renderModelList() {
-            const models = state.allModels.filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes("bidiGenerateContent"));
+            // Chỉ hiển thị model hỗ trợ Live API
+            const models = state.allModels.filter(m => 
+                m.supportedGenerationMethods && 
+                m.supportedGenerationMethods.includes("bidiGenerateContent")
+            );
 
             modelSelect.innerHTML = "";
             if (models.length === 0) {
@@ -286,22 +317,44 @@
                 modelSelect.appendChild(opt);
             });
 
-            if (modelSelect.options.length > 0) {
+            // Chỉ tự động chọn model đầu tiên nếu ô nhập tay đang rỗng
+            if (modelSelect.options.length > 0 && !manualModelInput.value.trim()) {
                 modelSelect.selectedIndex = 0;
                 manualModelInput.value = modelSelect.value;
+                addLog(`📌 Đã tự chọn model đầu tiên: ${modelSelect.value}`, "info");
+            } else if (modelSelect.options.length > 0) {
+                // Nếu ô nhập tay đã có giá trị (từ localStorage), cố gắng match với dropdown
+                const savedModel = manualModelInput.value.trim();
+                const matchIndex = Array.from(modelSelect.options).findIndex(o => o.value === savedModel);
+                if (matchIndex >= 0) {
+                    modelSelect.selectedIndex = matchIndex;
+                    addLog(`📌 Đã khôi phục model đã lưu: ${savedModel}`, "info");
+                } else {
+                    addLog(`⚠️ Model đã lưu "${savedModel}" không có trong danh sách. Hãy chọn model khác.`, "warning");
+                }
             }
         }
 
         // ==================== KIỂM TRA KẾT NỐI ====================
         function testConnection() {
             const key = apiKeyInput.value.trim();
-            let model = manualModelInput.value.trim() || modelSelect.value;
+            
+            // ƯU TIÊN: Ô nhập tay > dropdown
+            // Ô nhập tay luôn được đồng bộ khi chọn dropdown
+            let model = manualModelInput.value.trim();
+            
+            if (!model) {
+                model = modelSelect.value;
+            }
 
             if (!key) return alert("Vui lòng nhập API Key!");
             if (!model) return alert("Vui lòng chọn hoặc nhập Model!");
             if (!key.startsWith("AIza") && !key.startsWith("AQ.")) return alert("API key không hợp lệ.");
 
             if (!model.startsWith("models/")) model = "models/" + model;
+
+            // Cập nhật lại ô nhập tay để hiển thị model chuẩn
+            manualModelInput.value = model;
 
             state.apiKey = key;
             state.selectedModel = model;
@@ -386,7 +439,6 @@
                         responseModalities: ["AUDIO"],
                         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }
                     },
-                    // CẬP NHẬT: Yêu cầu AI không xuất ra văn bản suy luận
                     systemInstruction: {
                         parts: [{ 
                             text: "You are a friendly and patient English conversation partner helping a Vietnamese speaker practice English. Respond in English. Keep responses natural and conversational. IMPORTANT: Do NOT output any thinking, planning, or reasoning text. Only output the exact spoken words." 
@@ -398,7 +450,7 @@
             };
 
             const jsonStr = JSON.stringify(setupMessage);
-            addLog(`📤 Gửi setup (${jsonStr.length} bytes) — đã bật transcript.`, "info");
+            addLog(`📤 Gửi setup cho model: ${state.selectedModel}`, "info");
 
             try {
                 state.socket.send(jsonStr);
@@ -451,19 +503,17 @@
 
                 if (sc.modelTurn && sc.modelTurn.parts) {
                     for (const part of sc.modelTurn.parts) {
-                        // Chỉ phát audio, KHÔNG hiển thị text thô (tránh hiện tượng thinking)
+                        // Chỉ phát audio, KHÔNG hiển thị text thô
                         if (part.inlineData && part.inlineData.mimeType && part.inlineData.mimeType.startsWith("audio/pcm")) {
                             playAudioChunk(part.inlineData.data);
                         }
                     }
                 }
 
-                // Transcript giọng NÓI CỦA USER (input)
                 if (sc.inputTranscription && sc.inputTranscription.text) {
                     appendToUserTranscript(sc.inputTranscription.text);
                 }
 
-                // Transcript giọng NÓI CỦA AI (output) - CHỈ hiển thị phần này
                 if (sc.outputTranscription && sc.outputTranscription.text) {
                     appendToAITranscript(sc.outputTranscription.text);
                 }
