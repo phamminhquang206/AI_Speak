@@ -45,7 +45,6 @@
         }
         .small-btn:hover { border-color: #4f46e5; color: #4f46e5; }
 
-        /* Log Header & Panel */
         .log-header {
             display: flex; justify-content: space-between; align-items: center;
             margin-top: 16px; margin-bottom: 8px;
@@ -142,7 +141,6 @@
                 <button id="test-btn" class="btn btn-primary" style="width: 100%;">⚡ Kiểm tra kết nối</button>
             </div>
 
-            <!-- LOG HEADER & PANEL -->
             <div class="log-header">
                 <span>📋 Nhật ký kết nối</span>
                 <button id="toggle-log-btn" class="small-btn">Ẩn log</button>
@@ -233,7 +231,6 @@
             resetBtn.addEventListener("click", resetConnection);
             micBtn.addEventListener("click", toggleRecording);
             
-            // Nút Ẩn/Hiện Log
             toggleLogBtn.addEventListener("click", () => {
                 logPanel.classList.toggle("collapsed");
                 toggleLogBtn.textContent = logPanel.classList.contains("collapsed") ? "Hiện log" : "Ẩn log";
@@ -274,7 +271,6 @@
         }
 
         function renderModelList() {
-            const onlyLive = true; // Luôn lọc Live API cho ứng dụng này
             const models = state.allModels.filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes("bidiGenerateContent"));
 
             modelSelect.innerHTML = "";
@@ -352,7 +348,6 @@
                 state.setupTimeout = setTimeout(() => {
                     if (!state.sessionSetupComplete) {
                         addLog("⏰ HẾT THỜI GIAN CHỜ (15s). Server không phản hồi setupComplete.", "error");
-                        addLog("👉 Hãy thử chọn model ⚡ khác trong danh sách và bấm 'Kiểm tra kết nối' lại.", "info");
                         updateStatus("offline", "Timeout - Server không phản hồi");
                         try { state.socket.close(); } catch(e) {}
                     }
@@ -371,10 +366,6 @@
                 }
 
                 addLog(`WebSocket đóng. Mã: ${event.code}, Lý do: ${event.reason || "Không có"}`, "warning");
-
-                if (event.code === 1000 && !state.sessionSetupComplete) {
-                    addLog("💡 Mã 1000 (đóng bình thường nhưng KHÔNG có setupComplete): Model bị từ chối.", "warning");
-                }
 
                 state.isConnected = false;
                 state.sessionSetupComplete = false;
@@ -395,8 +386,11 @@
                         responseModalities: ["AUDIO"],
                         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }
                     },
+                    // CẬP NHẬT: Yêu cầu AI không xuất ra văn bản suy luận
                     systemInstruction: {
-                        parts: [{ text: "You are a friendly and patient English conversation partner helping a Vietnamese speaker practice English. Respond in English. Keep responses natural and conversational." }]
+                        parts: [{ 
+                            text: "You are a friendly and patient English conversation partner helping a Vietnamese speaker practice English. Respond in English. Keep responses natural and conversational. IMPORTANT: Do NOT output any thinking, planning, or reasoning text. Only output the exact spoken words." 
+                        }]
                     },
                     inputAudioTranscription: {},
                     outputAudioTranscription: {}
@@ -445,7 +439,6 @@
                 testBtn.disabled = false;
                 testBtn.textContent = "⚡ Kết nối lại";
 
-                // TỰ ĐỘNG ẨN LOG KHI KẾT NỐI THÀNH CÔNG
                 if (!logPanel.classList.contains("collapsed")) {
                     logPanel.classList.add("collapsed");
                     toggleLogBtn.textContent = "Hiện log";
@@ -458,17 +451,19 @@
 
                 if (sc.modelTurn && sc.modelTurn.parts) {
                     for (const part of sc.modelTurn.parts) {
+                        // Chỉ phát audio, KHÔNG hiển thị text thô (tránh hiện tượng thinking)
                         if (part.inlineData && part.inlineData.mimeType && part.inlineData.mimeType.startsWith("audio/pcm")) {
                             playAudioChunk(part.inlineData.data);
                         }
-                        if (part.text) appendToAITranscript(part.text);
                     }
                 }
 
+                // Transcript giọng NÓI CỦA USER (input)
                 if (sc.inputTranscription && sc.inputTranscription.text) {
                     appendToUserTranscript(sc.inputTranscription.text);
                 }
 
+                // Transcript giọng NÓI CỦA AI (output) - CHỈ hiển thị phần này
                 if (sc.outputTranscription && sc.outputTranscription.text) {
                     appendToAITranscript(sc.outputTranscription.text);
                 }
